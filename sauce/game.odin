@@ -111,7 +111,7 @@ Entity :: struct {
   next_frame_end_time: f64,
   loop: bool,
   frame_duration: f32,
-	
+
 	// this gets zeroed every frame. Useful for passing data to other systems.
 	scratch: struct {
 		col_override: Vec4,
@@ -189,7 +189,7 @@ game_update :: proc() {
 	}
 
 	rebuild_scratch_helpers()
-	
+
 	// big :update time
 	for handle in get_all_ents() {
 		e := entity_from_handle(handle)
@@ -243,7 +243,7 @@ game_draw :: proc() {
 	// world
 	{
 		draw.push_coord_space(get_world_space())
-		
+
 		draw.draw_sprite({10, 10}, .player_still, col_override=Vec4{1,0,0,0.4})
 		draw.draw_sprite({-10, 10}, .player_still)
 
@@ -379,11 +379,11 @@ update_entity_animation :: proc(e: ^Entity) {
 	}
 
 	if is_playing {
-	
+
 		if e.next_frame_end_time == 0 {
 			e.next_frame_end_time = now() + f64(e.frame_duration)
 		}
-	
+
 		if end_time_up(e.next_frame_end_time) {
 			e.anim_index += 1
 			e.next_frame_end_time = 0

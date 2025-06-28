@@ -9,4 +9,4 @@ Platform :: enum {
 	windows,
 	mac,
 }
-PLATFORM :: Platform.windows
+PLATFORM :: Platform.mac

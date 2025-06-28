@@ -1,3 +1,4 @@
+#+feature dynamic-literals
 /*
 
 Build script.
@@ -7,21 +8,21 @@ There's too many project-specific settings here, so it's not worth the effort.
 
 */
 
-#+feature dynamic-literals
+
 package build
 
-import path "core:path/filepath"
 import "core:fmt"
-import "core:os/os2"
-import "core:os"
-import "core:strings"
 import "core:log"
+import "core:os"
+import "core:os/os2"
+import path "core:path/filepath"
 import "core:reflect"
+import "core:strings"
 import "core:time"
 
 // we are assuming we're right next to the bald collection
-import logger "../bald/utils/logger"
 import utils "../bald/utils"
+import logger "../bald/utils/logger"
 
 EXE_NAME :: "game"
 
@@ -34,7 +35,29 @@ main :: proc() {
 	context.logger = logger.logger()
 	context.assertion_failure_proc = logger.assertion_failure_proc
 
-	//fmt.println(os2.args)
+	// We should already be in the project root thanks to the bash script
+	fmt.println("Current directory:", os.get_current_directory())
+
+	// Verify we're in the right place
+	if !os.exists("sauce") {
+		log.error("Could not find 'sauce' directory. Are we in the right project root?")
+		log.error("Current directory:", os.get_current_directory())
+		log.error("Directory contents:")
+
+		// List what's in the current directory to help debug
+		handle, err := os.open(".")
+		if err == os.ERROR_NONE {
+			defer os.close(handle)
+			file_infos, read_err := os.read_dir(handle, -1)
+			if read_err == os.ERROR_NONE {
+				defer delete(file_infos)
+				for info in file_infos {
+					log.error("  -", info.name)
+				}
+			}
+		}
+		return
+	}
 
 	start_time := time.now()
 
@@ -43,9 +66,12 @@ main :: proc() {
 
 	target: Target
 	#partial switch ODIN_OS {
-		case .Windows: target = .windows
-		case .Darwin: target = .mac
-		case: {
+	case .Windows:
+		target = .windows
+	case .Darwin:
+		target = .mac
+	case:
+		{
 			log.error("Unsupported os:", ODIN_OS)
 			return
 		}
@@ -61,7 +87,7 @@ main :: proc() {
 			fmt.eprintln("Error:", err)
 		}
 		defer os.close(f)
-		
+
 		using fmt
 		fprintln(f, "//")
 		fprintln(f, "// MACHINE GENERATED via build.odin")
@@ -76,19 +102,29 @@ main :: proc() {
 		fprintln(f, "}")
 		fprintln(f, tprintf("PLATFORM :: Platform.%v", target))
 	}
-	
+
 	// generate the shader
 	// docs: https://github.com/floooh/sokol-tools/blob/master/docs/sokol-shdc.md
-	utils.fire("sokol-shdc", "-i", "sauce/bald/draw/shader_core.glsl", "-o", "sauce/bald-user/generated_shader.odin", "-l", "hlsl5:metal_macos", "-f", "sokol_odin")
+	utils.fire(
+		"sokol-shdc",
+		"-i",
+		"sauce/bald/draw/shader_core.glsl",
+		"-o",
+		"sauce/bald-user/generated_shader.odin",
+		"-l",
+		"hlsl5:metal_macos",
+		"-f",
+		"sokol_odin",
+	)
 
 	wd := os.get_current_directory()
 
-	//utils.make_directory_if_not_exist("build")
-	
-	out_dir : string
+	out_dir: string
 	switch target {
-		case .windows: out_dir = "build/windows_debug"
-		case .mac: out_dir = "build/mac_debug"
+	case .windows:
+		out_dir = "build/windows_debug"
+	case .mac:
+		out_dir = "build/mac_debug"
 	}
 
 	full_out_dir_path := fmt.tprintf("%v/%v", wd, out_dir)
@@ -106,8 +142,6 @@ main :: proc() {
 			"-collection:user=sauce",
 			fmt.tprintf("-out:%v/%v.exe", out_dir, EXE_NAME),
 		}
-		// not needed, it's easier to just generate code into generated.odin
-		//append(&c, fmt.tprintf("-define:TARGET_STRING=%v", target))
 		utils.fire(..c[:])
 	}
 
@@ -115,27 +149,61 @@ main :: proc() {
 	{
 		// NOTE, if it already exists, it won't copy (to save build time)
 		files_to_copy: [dynamic]string
+		folders_to_copy: [dynamic]string
 
 		switch target {
-			case .windows:
+		case .windows:
 			append(&files_to_copy, "sauce/bald/sound/fmod/studio/lib/windows/x64/fmodstudio.dll")
 			append(&files_to_copy, "sauce/bald/sound/fmod/studio/lib/windows/x64/fmodstudioL.dll")
 			append(&files_to_copy, "sauce/bald/sound/fmod/core/lib/windows/x64/fmod.dll")
 			append(&files_to_copy, "sauce/bald/sound/fmod/core/lib/windows/x64/fmodL.dll")
 
-			case .mac:
+		case .mac:
 			append(&files_to_copy, "sauce/bald/sound/fmod/studio/lib/darwin/libfmodstudio.dylib")
 			append(&files_to_copy, "sauce/bald/sound/fmod/studio/lib/darwin/libfmodstudioL.dylib")
 			append(&files_to_copy, "sauce/bald/sound/fmod/core/lib/darwin/libfmod.dylib")
 			append(&files_to_copy, "sauce/bald/sound/fmod/core/lib/darwin/libfmodL.dylib")
+
+			append(&folders_to_copy, "res")
 		}
 
+		// Copy individual files
 		for src in files_to_copy {
+			fmt.println("Checking file:", src)
+			if !os.exists(src) {
+				fmt.printf("WARNING: Source file does not exist: %v\n", src)
+				continue
+			}
+
 			dir, file_name := path.split(src)
-			assert(os.exists(dir), fmt.tprint("directory doesn't exist:", dir))
 			dest := fmt.tprintf("%v/%v", out_dir, file_name)
 			if !os.exists(dest) {
-				os2.copy_file(dest, src)
+				fmt.printf("Copying %v -> %v\n", src, dest)
+				err := os2.copy_file(dest, src)
+				if err != nil {
+					fmt.printf("Error copying file %v: %v\n", src, err)
+				}
+			} else {
+				fmt.printf("File already exists, skipping: %v\n", dest)
+			}
+		}
+
+		// Copy entire folders
+		for src_folder in folders_to_copy {
+			fmt.println("Checking folder:", src_folder)
+			if !os.exists(src_folder) {
+				fmt.printf("WARNING: Source folder does not exist: %v\n", src_folder)
+				continue
+			}
+
+			_, folder_name := path.split(src_folder)
+			dest_folder := fmt.tprintf("%v/%v", out_dir, folder_name)
+
+			if !os.exists(dest_folder) {
+				fmt.printf("Copying folder %v -> %v\n", src_folder, dest_folder)
+				copy_folder_recursive(dest_folder, src_folder)
+			} else {
+				fmt.printf("Folder already exists, skipping: %v\n", dest_folder)
 			}
 		}
 	}
@@ -143,6 +211,39 @@ main :: proc() {
 	fmt.println("DONE in", time.diff(start_time, time.now()))
 }
 
+// Helper function to recursively copy folders
+copy_folder_recursive :: proc(dest: string, src: string) {
+	// Create destination directory
+	os.make_directory(dest)
+
+	// Read all entries in source directory
+	handle, err := os.open(src)
+	if err != os.ERROR_NONE {
+		fmt.printf("Error opening directory %v: %v\n", src, err)
+		return
+	}
+	defer os.close(handle)
+
+	file_infos, read_err := os.read_dir(handle, -1) // -1 means read all
+	if read_err != os.ERROR_NONE {
+		fmt.printf("Error reading directory %v: %v\n", src, read_err)
+		return
+	}
+	defer delete(file_infos)
+
+	for info in file_infos {
+		src_path := fmt.tprintf("%v/%v", src, info.name)
+		dest_path := fmt.tprintf("%v/%v", dest, info.name)
+
+		if info.is_dir {
+			// Recursively copy subdirectory
+			copy_folder_recursive(dest_path, src_path)
+		} else {
+			// Copy file
+			os2.copy_file(dest_path, src_path)
+		}
+	}
+}
 
 // value extraction example:
 /*
@@ -162,3 +263,4 @@ for arg in os2.args {
 	}
 }
 */
+

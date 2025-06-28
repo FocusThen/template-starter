@@ -1,3 +1,5 @@
-#!/bin/zsh
+#!/bin/bash
 
-odin run ./sauce/build -- target:mac
+cd "$(dirname "$0")"
+
+odin run ./sauce/build -file -- target:mac && ./build/mac_debug/game.exe && rm build.bin
